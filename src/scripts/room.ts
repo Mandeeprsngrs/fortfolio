@@ -5,9 +5,13 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { DartGame, Hud } from './darts';
+import type { Arcade, Glass } from './arcade';
 import { createPosters, type Posters } from './posters';
+import { createNowPlaying } from './nowplaying';
+import { asset } from './asset';
+import { createHints, type Hints } from './hints';
 
-const MODEL_URL = '/models/mandeep.glb';
+const MODEL_URL = asset('models/mandeep.glb');
 
 // The room is rescaled to this size. Camera and control limits below are written
 // against it, not against Maya's units, so swapping in a re-export doesn't break them.
@@ -29,8 +33,21 @@ const THROW_DISTANCE_M = 2.37; // board face to throw line (the oche)
 const BOARD_FILL = 0.7; // in focus, the board fills 70% of the screen's shorter side
 const FOCUS_SECONDS = 0.9;
 
+// The TV next to the console shows the maze game. Clicking either focuses it.
+const TV = 'television_03';
+const CONSOLE = 'gaming_console1';
+// Where the glass sits on the TV, as FRACTIONS of the TV mesh's bounding box
+// (mesh space: x right, z up, front faces −y). Measured on the unquantized
+// mesh: the tube spans x ±0.16 and z 0.14–0.377 inside a box of x −0.202–0.198,
+// z 0–0.411 — 4:3, like the game. Fractions, not raw numbers, because meshopt
+// quantization rescales mesh space to −1…1 and moves the difference into the
+// node's transform; ratios inside the box survive that, coordinates don't.
+const TV_GLASS_FRAC = { cx: 0.5, cz: 0.6277, w: 0.75, h: 0.5474, inFront: 0.0015 };
+const SCREEN_FILL = 0.8; // in focus, the screen fills 80% of the view
+const SCREEN_FOV = 40;
+
 export type RoomState = 'loading' | 'ready' | 'error';
-export type RoomView = 'room' | 'dartboard';
+export type RoomView = 'room' | 'dartboard' | 'console';
 
 export interface RoomHandle {
   backToRoom: () => void;
@@ -149,6 +166,8 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud): RoomHandle
     if (view === 'dartboard' && !tween) {
       camera.fov = focusFov(camera.position.distanceTo(focus.centre));
       camera.updateProjectionMatrix();
+    } else if (view === 'console' && !tween) {
+      camera.updateProjectionMatrix(); // keep the fixed screen framing
     } else {
       fitFov(); // also calls updateProjectionMatrix(); reruns when a phone rotates
     }
@@ -200,7 +219,15 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud): RoomHandle
       controls.update();
 
       // ── Measure the dartboard (after the room's scale/position are set) ──
-      posters = createPosters(room);
+      // The "now playing" card (Room.astro markup, nowplaying.ts behaviour);
+      // its stop button stops whichever poster is playing.
+      const npRoot = canvas.parentElement?.querySelector<HTMLElement>('#now-playing');
+      const nowPlaying = npRoot ? createNowPlaying(npRoot, () => posters?.stopAll()) : null;
+      posters = createPosters(room, {
+        onPlay: (song) => nowPlaying?.show(song),
+        onProgress: (f) => nowPlaying?.progress(f),
+        onStop: () => nowPlaying?.hide(),
+      });
 
       dartboard = room.getObjectByName(DARTBOARD) ?? null;
       if (dartboard) {
@@ -227,6 +254,39 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud): RoomHandle
         console.warn(`No "${DARTBOARD}" node in ${MODEL_URL}; dartboard focus disabled`);
       }
 
+      // ── Measure the TV screen ──
+      tv = room.getObjectByName(TV) ?? null;
+      consoleObj = room.getObjectByName(CONSOLE) ?? null;
+      if (tv) {
+        room.updateMatrixWorld(true);
+        const geo = (tv as THREE.Mesh).geometry;
+        geo.computeBoundingBox();
+        const bb = geo.boundingBox!;
+        const size = bb.getSize(new THREE.Vector3());
+        tvGlass = {
+          cx: bb.min.x + TV_GLASS_FRAC.cx * size.x,
+          cz: bb.min.z + TV_GLASS_FRAC.cz * size.z,
+          y: bb.min.y - TV_GLASS_FRAC.inFront * size.y, // front face is min y
+          w: TV_GLASS_FRAC.w * size.x,
+          h: TV_GLASS_FRAC.h * size.z,
+        };
+        tv.localToWorld(screen.centre.set(tvGlass.cx, tvGlass.y, tvGlass.cz));
+        // The glass faces local −Y; turn that into a world direction.
+        screen.normal.set(0, -1, 0).transformDirection(tv.matrixWorld);
+        // World size of the glass: local size × the TV's world scale.
+        const s = new THREE.Vector3().setFromMatrixScale(tv.matrixWorld);
+        screen.w = tvGlass.w * s.x;
+        screen.h = tvGlass.h * s.z;
+      }
+
+      // ── Idle hints, made of the scene itself (see hints.ts) ──
+      hints = createHints({ scene, loader, board: dartboard ? focus : null, posters });
+      // The TV's demo needs the game code, so fetch it now instead of on first
+      // click (3.5 KB brotli, requested after the room is already on screen).
+      loadArcade()?.then((a) => {
+        if (view === 'room') a.showDemo();
+      });
+
       setState('ready');
     },
     undefined,
@@ -244,13 +304,16 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud): RoomHandle
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2(); // pointer in normalized device coords, -1..1
   let posters: Posters | null = null;
+  let hints: Hints | null = null;
 
-  type Pick = { kind: 'dartboard' } | { kind: 'poster'; name: string } | null;
+  type Pick = { kind: 'dartboard' } | { kind: 'console' } | { kind: 'poster'; name: string } | null;
   function pickUnderPointer(e: PointerEvent): Pick {
     const r = canvas.getBoundingClientRect();
     ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     if (dartboard && raycaster.intersectObject(dartboard, true).length > 0) return { kind: 'dartboard' };
+    const screenObjs = [tv, consoleObj].filter((o): o is THREE.Object3D => o !== null);
+    if (raycaster.intersectObjects(screenObjs, true).length > 0) return { kind: 'console' };
     const poster = posters?.pick(raycaster);
     return poster ? { kind: 'poster', name: poster } : null;
   }
@@ -266,7 +329,9 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud): RoomHandle
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     if (moved >= 6 || view !== 'room' || tween) return;
     const hit = pickUnderPointer(e);
+    if (hit) hints?.dismiss();
     if (hit?.kind === 'dartboard') focusDartboard();
+    else if (hit?.kind === 'console') focusConsole();
     else if (hit?.kind === 'poster') posters?.toggle(hit.name);
   };
   const onPointerMove = (e: PointerEvent) => {
@@ -333,9 +398,56 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud): RoomHandle
     return gamePromise;
   }
 
+  // ── The TV game: its own chunk, fetched once the room is ready so the TV can
+  // play a demo; clicking the console then moves the camera in and starts it ──
+  let tv: THREE.Object3D | null = null;
+  let tvGlass: Glass | null = null;
+  let consoleObj: THREE.Object3D | null = null;
+  const screen = { centre: new THREE.Vector3(), normal: new THREE.Vector3(), w: 0, h: 0 };
+  let arcadePromise: Promise<Arcade> | null = null;
+  let arcade: Arcade | null = null;
+
+  function loadArcade() {
+    if (!tv || !tvGlass) return null;
+    const tvNode = tv;
+    const glass = tvGlass;
+    arcadePromise ??= import('./arcade').then(({ createArcade }) => {
+      arcade = createArcade({ tv: tvNode, glass, input: canvas });
+      return arcade;
+    });
+    arcadePromise.catch((err) => console.error('TV game failed to load', err));
+    return arcadePromise;
+  }
+
+  function focusConsole() {
+    if (!tv) return;
+    saved.position.copy(camera.position);
+    saved.target.copy(controls.target);
+    saved.fov = camera.fov;
+    controls.enabled = false;
+    canvas.style.cursor = '';
+    posters?.stopAll();
+    setView('console');
+    // Distance at which the screen fills SCREEN_FILL of the view at SCREEN_FOV,
+    // checking height and (for portrait screens) width — same idea as fitFov.
+    const tanV = Math.tan(THREE.MathUtils.degToRad(SCREEN_FOV / 2));
+    const dist = Math.max(
+      screen.h / 2 / SCREEN_FILL / tanV,
+      screen.w / 2 / SCREEN_FILL / (tanV * camera.aspect),
+    );
+    const position = screen.centre.clone().addScaledVector(screen.normal, dist);
+    const loading = loadArcade();
+    startTween({ position, target: screen.centre.clone(), fov: SCREEN_FOV }, () => {
+      loading?.then((a) => {
+        if (view === 'console') a.activate();
+      });
+    });
+  }
+
   function backToRoom() {
-    if (view !== 'dartboard' || tween) return;
+    if (view === 'room' || tween) return;
     game?.deactivate();
+    arcade?.deactivate();
     startTween({ position: saved.position.clone(), target: saved.target.clone(), fov: saved.fov }, () => {
       setView('room');
       controls.enabled = true;
@@ -353,6 +465,9 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud): RoomHandle
     timer.update(timestamp);
     const dt = timer.getDelta();
     game?.update(dt);
+    arcade?.update(dt);
+    posters?.update(timer.getElapsed());
+    hints?.update(dt, view === 'room' && !tween);
     if (tween) {
       tween.t = Math.min(1, tween.t + dt / FOCUS_SECONDS);
       const k = tween.t < 0.5 ? 4 * tween.t ** 3 : 1 - (-2 * tween.t + 2) ** 3 / 2; // ease in-out
@@ -385,6 +500,8 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud): RoomHandle
     timer.dispose();
     game?.dispose();
     posters?.dispose();
+    hints?.dispose();
+    arcade?.dispose();
     controls.dispose();
     ktx2.dispose();
     envMap.dispose();

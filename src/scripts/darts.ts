@@ -9,9 +9,10 @@
 // is horizontal, so the distance to the board shrinks LINEARLY with time — the
 // moment of impact is a single division, not a simulation.
 import * as THREE from 'three';
+import { asset } from './asset';
 import type { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-const DART_URL = '/models/dart.glb';
+const DART_URL = asset('models/dart.glb');
 
 // ── Tuning (all in real-world units; converted with unitsPerMetre) ──────────
 const GRAVITY = 9.81; // m/s²

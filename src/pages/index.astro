@@ -1,5 +1,6 @@
 ---
 import Room from '../components/Room.astro';
+import { asset } from '../scripts/asset';
 ---
 
 <!doctype html>
@@ -7,11 +8,11 @@ import Room from '../components/Room.astro';
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href={asset('favicon.svg')} />
     <title>Mandeep — 3D Artist</title>
     <meta name="description" content="Portfolio of Mandeep, 3D artist." />
     <!-- Start fetching the model while the JS is still downloading. -->
-    <link rel="preload" href="/models/mandeep.glb" as="fetch" crossorigin="anonymous" />
+    <link rel="preload" href={asset('models/mandeep.glb')} as="fetch" crossorigin="anonymous" />
   </head>
   <body>
     <main>
