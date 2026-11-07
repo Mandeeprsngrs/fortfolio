@@ -1,10 +1,11 @@
 ---
 // Renders on the server as plain HTML (the <canvas> and a button). The <script>
 // below is bundled by Vite and runs in the browser.
+import Computer from './Computer.astro';
 ---
 
 <div class="room">
-  <canvas id="room" aria-label="Mandeep's 3D room"></canvas>
+  <canvas id="room" tabindex="-1" aria-label="Mandeep's 3D room"></canvas>
   <button id="room-back" type="button">← Back to room</button>
   <div id="darts-hud" aria-live="polite">
     <div class="power" aria-hidden="true"><div class="fill"></div><div class="sweet"></div></div>
@@ -14,6 +15,22 @@
     </div>
     <p class="hint">Aim with the pointer · hold to charge · release at the white line</p>
   </div>
+  <!-- Shown by leaderboard.ts when a score makes the top 10. -->
+  <form id="hiscore" hidden autocomplete="off">
+    <p class="hs-kicker">New high score · <span class="hs-game"></span></p>
+    <strong class="hs-score"></strong>
+    <label class="hs-label">
+      Your initials
+      <input name="initials" maxlength="3" spellcheck="false" autocapitalize="characters" inputmode="text" aria-describedby="hs-msg" />
+    </label>
+    <p class="hs-msg" id="hs-msg" aria-live="polite"></p>
+    <div class="hs-actions">
+      <button type="button" class="hs-skip">Skip</button>
+      <button type="submit">Save</button>
+    </div>
+  </form>
+  <!-- The desk computer's desktop (computer.ts places it over the monitor). -->
+  <Computer />
   <!-- Filled in by nowplaying.ts while a poster's song plays. -->
   <div id="now-playing" data-state="stopped" role="status" aria-live="polite">
     <div class="np-disc" aria-hidden="true"><img class="np-label" alt="" /></div>
@@ -30,6 +47,19 @@
       </svg>
     </button>
   </div>
+  <!-- Title screen: also the loading screen. Removed on "Enter". -->
+  <div id="intro" data-state="loading">
+    <div class="intro-card">
+      <p class="intro-kicker">Portfolio</p>
+      <h1>Mandeep</h1>
+      <p class="intro-role">3D Artist</p>
+      <p class="intro-text">Step into my room. Most things in it can be clicked: the dartboard, the TV, the posters, the computer.</p>
+      <div class="intro-progress" role="progressbar" aria-label="Loading the room" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="intro-bar"></div>
+      </div>
+      <button id="intro-enter" type="button" disabled>Loading the room…</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -44,9 +74,38 @@
     last: hudRoot.querySelector<HTMLElement>('#darts-last')!,
     total: hudRoot.querySelector<HTMLElement>('#darts-total')!,
   };
+  const intro = document.querySelector<HTMLElement>('#intro');
+  const enterBtn = document.querySelector<HTMLButtonElement>('#intro-enter');
+  const progress = intro?.querySelector<HTMLElement>('.intro-progress');
   if (canvas) {
-    const room = mountRoom(canvas, hud ?? undefined);
+    const room = mountRoom(canvas, hud ?? undefined, {
+      onProgress: (f) => {
+        const pct = Math.round(f * 100);
+        progress?.style.setProperty('--p', String(f));
+        progress?.setAttribute('aria-valuenow', String(pct));
+        // Past 100% of the download, textures are still being decoded.
+        if (enterBtn && canvas.dataset.state === 'loading') enterBtn.textContent = pct < 100 ? `Loading the room… ${pct}%` : 'Preparing…';
+      },
+    });
     back?.addEventListener('click', room.backToRoom);
+    // room.ts flips canvas[data-state] to ready/error; enable the button then.
+    new MutationObserver(() => {
+      const state = canvas.dataset.state;
+      if (!intro || !enterBtn) return;
+      intro.dataset.state = state ?? 'loading';
+      if (state === 'ready') {
+        enterBtn.disabled = false;
+        enterBtn.textContent = 'Enter the room';
+        enterBtn.focus();
+      } else if (state === 'error') {
+        enterBtn.textContent = "Couldn't load the room. Reload to try again.";
+      }
+    }).observe(canvas, { attributes: true, attributeFilter: ['data-state'] });
+    enterBtn?.addEventListener('click', () => {
+      room.enter();
+      intro?.setAttribute('data-state', 'gone'); // fades out, then hidden via CSS
+      canvas.focus();
+    });
     // Vite re-runs this module on save. Without disposing, every save stacks
     // another renderer + render loop on the same canvas.
     if (import.meta.hot) import.meta.hot.dispose(room.dispose);
@@ -67,6 +126,9 @@
     height: 100svh;
     touch-action: none; /* otherwise vertical drags scroll the page on mobile */
     cursor: grab;
+  }
+  canvas:focus {
+    outline: none; /* focus is moved here after the title screen; nothing to show */
   }
   canvas:active {
     cursor: grabbing;
@@ -152,6 +214,93 @@
       display: none;
     }
   }
+  /* ── High-score initials prompt ──────────────────────────────────── */
+  #hiscore {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    width: min(320px, calc(100% - 32px));
+    box-sizing: border-box;
+    padding: 20px 22px 18px;
+    color: #f3efe8;
+    background: rgb(20 20 24 / 0.92);
+    border: 1px solid rgb(255 255 255 / 0.15);
+    border-radius: 16px;
+    font: 500 15px/1.3 system-ui, sans-serif;
+    text-align: center;
+  }
+  #hiscore[hidden] {
+    display: none;
+  }
+  .hs-kicker {
+    margin: 0;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+  .hs-score {
+    font-size: 40px;
+    line-height: 1;
+    color: #e8c547;
+  }
+  .hs-label {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+    opacity: 0.85;
+  }
+  .hs-label input {
+    width: 4.2ch;
+    padding: 6px 8px;
+    font: bold 32px/1 monospace;
+    letter-spacing: 0.25em;
+    text-align: center;
+    text-transform: uppercase;
+    color: #f3efe8;
+    background: rgb(255 255 255 / 0.08);
+    border: 1px solid rgb(255 255 255 / 0.25);
+    border-radius: 8px;
+    justify-self: center;
+  }
+  .hs-msg {
+    min-height: 1.3em;
+    margin: 0;
+    font-size: 13px;
+    color: #f0a58a;
+  }
+  .hs-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .hs-actions button {
+    padding: 8px 18px;
+    font: 600 14px/1 system-ui, sans-serif;
+    color: #f3efe8;
+    background: rgb(255 255 255 / 0.1);
+    border: 1px solid rgb(255 255 255 / 0.2);
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .hs-actions button[type='submit'] {
+    color: #141418;
+    background: #e8c547;
+    border-color: #e8c547;
+  }
+  .hs-actions button:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+  .hs-actions button:focus-visible,
+  .hs-label input:focus-visible {
+    outline: 2px solid #f3efe8;
+    outline-offset: 2px;
+  }
+
   /* ── Now playing card ─────────────────────────────────────────────── */
   #now-playing {
     position: absolute;
@@ -283,6 +432,87 @@
       animation: none;
     }
   }
+  /* ── Title screen ─────────────────────────────────────────────────── */
+  #intro {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgb(14 14 18 / 0.78); /* the room renders, dimmed, behind */
+    transition: opacity 0.6s, visibility 0.6s;
+  }
+  #intro[data-state='gone'] {
+    opacity: 0;
+    visibility: hidden; /* no longer blocks clicks once faded */
+  }
+  .intro-card {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    max-width: 440px;
+    color: #f3efe8;
+    text-align: center;
+    font: 400 16px/1.5 system-ui, sans-serif;
+  }
+  .intro-kicker {
+    margin: 0;
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+  .intro-card h1 {
+    margin: 0;
+    font: 700 clamp(44px, 11vw, 76px) / 1 system-ui, sans-serif;
+    letter-spacing: -0.02em;
+  }
+  .intro-role {
+    margin: 0 0 8px;
+    font-size: 18px;
+    color: #e8c547;
+  }
+  .intro-text {
+    margin: 0 0 18px;
+    opacity: 0.8;
+  }
+  .intro-progress {
+    width: min(260px, 100%);
+    height: 4px;
+    margin-bottom: 14px;
+    overflow: hidden;
+    background: rgb(255 255 255 / 0.15);
+    border-radius: 2px;
+  }
+  .intro-bar {
+    width: calc(var(--p, 0) * 100%);
+    height: 100%;
+    background: #e8c547;
+    transition: width 0.2s;
+  }
+  #intro[data-state='ready'] .intro-progress,
+  #intro[data-state='gone'] .intro-progress {
+    visibility: hidden;
+  }
+  #intro-enter {
+    padding: 12px 26px;
+    font: 600 16px/1 system-ui, sans-serif;
+    color: #141418;
+    background: #e8c547;
+    border: 0;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  #intro-enter:disabled {
+    color: #f3efe8;
+    background: rgb(255 255 255 / 0.12);
+    cursor: progress;
+  }
+  #intro-enter:focus-visible {
+    outline: 2px solid #f3efe8;
+    outline-offset: 3px;
+  }
+
   #room-back:focus-visible {
     outline: 2px solid #f3efe8;
     outline-offset: 2px;

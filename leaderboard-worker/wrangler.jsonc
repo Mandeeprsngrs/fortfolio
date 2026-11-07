@@ -1,0 +1,27 @@
+{
+  // Leaderboard API for Mandeep's portfolio (darts + maze).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mandeep-leaderboard",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mandeep-leaderboard",
+      // Paste the id printed by `npx wrangler d1 create mandeep-leaderboard`.
+      "database_id": "REPLACE_WITH_DATABASE_ID"
+    }
+  ],
+
+  // Rebuild the published boards at 00:00, 08:00 and 16:00 UTC
+  // (05:30, 13:30, 21:30 IST).
+  "triggers": { "crons": ["0 */8 * * *"] },
+
+  "vars": {
+    // Sites allowed to call the API from the browser (comma-separated).
+    "ALLOWED_ORIGINS": "https://mandeeprsngrs.github.io,http://localhost:4321"
+  }
+  // Secret (not in this file): IP_SALT — set with `npx wrangler secret put IP_SALT`.
+}

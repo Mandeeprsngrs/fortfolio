@@ -1,0 +1,16 @@
+{
+  "name": "mandeep-leaderboard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init:local": "wrangler d1 execute mandeep-leaderboard --local --file schema.sql",
+    "db:init:remote": "wrangler d1 execute mandeep-leaderboard --remote --file schema.sql"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261028.1",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.154.0"
+  }
+}

@@ -67,6 +67,7 @@ export async function createDartGame(opts: {
   loader: GLTFLoader;
   board: BoardFrame;
   hud: Hud;
+  onRoundEnd?: (total: number) => void; // after the 3rd dart lands (leaderboard)
 }) {
   const { scene, camera, canvas, board, hud } = opts;
   const upm = board.unitsPerMetre;
@@ -244,7 +245,10 @@ export async function createDartGame(opts: {
     roundTotal += result.score;
     hud.last.textContent = `${result.label}${result.score ? ` · ${result.score}` : ''}`;
     hud.total.textContent = `Round: ${roundTotal}  (${thrown.length}/${DARTS_PER_ROUND})`;
-    if (thrown.length >= DARTS_PER_ROUND) hud.root.dataset.roundOver = 'true';
+    if (thrown.length >= DARTS_PER_ROUND) {
+      hud.root.dataset.roundOver = 'true';
+      opts.onRoundEnd?.(roundTotal);
+    }
   }
 
   function newRound() {

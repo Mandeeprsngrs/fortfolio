@@ -1,0 +1,171 @@
+---
+// The desktop shown on the desk computer's screen once the camera has zoomed
+// in (computer.ts positions and sizes it over the monitor's glass).
+//
+// EDIT HERE: everything below marked "Placeholder" is meant to be replaced.
+// Projects are a simple list so adding one is copy-paste.
+const projects = [
+  { title: 'Project one', year: '2026', blurb: 'Placeholder — one or two lines about the piece, the tools used, what was hard.', link: '' },
+  { title: 'Project two', year: '2025', blurb: 'Placeholder — e.g. a character model, an environment, an animation.', link: '' },
+  { title: 'Project three', year: '2025', blurb: 'Placeholder — link to ArtStation, Sketchfab or a video.', link: '' },
+];
+const contact = {
+  email: 'hello@example.com', // Placeholder
+  links: [
+    { label: 'Instagram', href: '' }, // Placeholder
+    { label: 'ArtStation', href: '' },
+    { label: 'LinkedIn', href: '' },
+  ],
+};
+---
+
+<section id="computer-screen" hidden aria-label="Mandeep's computer">
+  <header class="cs-bar">
+    <span class="cs-dot" aria-hidden="true"></span>
+    <span class="cs-title">MANDEEP OS</span>
+  </header>
+  <div class="cs-tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="cs-tab-about" aria-controls="cs-about" aria-selected="true">About me</button>
+    <button role="tab" id="cs-tab-projects" aria-controls="cs-projects" aria-selected="false" tabindex="-1">Projects</button>
+    <button role="tab" id="cs-tab-contact" aria-controls="cs-contact" aria-selected="false" tabindex="-1">Contact</button>
+  </div>
+  <div class="cs-body">
+    <article id="cs-about" role="tabpanel" aria-labelledby="cs-tab-about">
+      <h2>Hi, I'm Mandeep.</h2>
+      <p>Placeholder — a short intro: what kind of 3D work you do, the tools you use (e.g. Blender, Maya, Substance), and what you're looking for.</p>
+      <p>Placeholder — a second line about this room: everything in it is modelled by you, and most of it can be clicked.</p>
+    </article>
+    <article id="cs-projects" role="tabpanel" aria-labelledby="cs-tab-projects" hidden>
+      <ul class="cs-projects">
+        {projects.map((p) => (
+          <li>
+            <h3>{p.title} <span class="cs-year">{p.year}</span></h3>
+            <p>{p.blurb}</p>
+            {p.link && <a href={p.link} target="_blank" rel="noopener">View →</a>}
+          </li>
+        ))}
+      </ul>
+    </article>
+    <article id="cs-contact" role="tabpanel" aria-labelledby="cs-tab-contact" hidden>
+      <p>Placeholder — "Open to freelance and full-time 3D work."</p>
+      <p class="cs-email"><a href={`mailto:${contact.email}`}>{contact.email}</a></p>
+      <ul class="cs-links">
+        {contact.links.map((l) => (
+          <li>{l.href ? <a href={l.href} target="_blank" rel="noopener">{l.label}</a> : <span>{l.label} (link coming soon)</span>}</li>
+        ))}
+      </ul>
+    </article>
+  </div>
+</section>
+
+<style>
+  /* An amber-phosphor CRT desktop. Sizes scale with --cs-scale, which
+     computer.ts sets from the panel's width (1 = 640 px). */
+  #computer-screen {
+    --amber: #ffb347;
+    --amber-dim: rgb(255 179 71 / 0.6);
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    overflow: hidden;
+    color: var(--amber);
+    background:
+      repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.22) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at center, #1d1408 0%, #0d0904 100%);
+    font: 500 calc(16px * var(--cs-scale, 1)) / 1.45 ui-monospace, 'Cascadia Mono', 'Consolas', 'DejaVu Sans Mono', monospace;
+    border-radius: calc(10px * var(--cs-scale, 1));
+    box-shadow: inset 0 0 calc(40px * var(--cs-scale, 1)) rgb(0 0 0 / 0.6);
+    text-shadow: 0 0 6px rgb(255 160 40 / 0.35);
+  }
+  #computer-screen[hidden] {
+    display: none;
+  }
+  .cs-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.5em 0.9em;
+    border-bottom: 1px solid var(--amber-dim);
+    letter-spacing: 0.12em;
+    font-size: 0.8em;
+  }
+  .cs-dot {
+    width: 0.6em;
+    height: 0.6em;
+    border-radius: 50%;
+    background: var(--amber);
+  }
+  .cs-tabs {
+    display: flex;
+    gap: 0.4em;
+    padding: 0.6em 0.9em 0;
+  }
+  .cs-tabs button {
+    padding: 0.35em 0.8em;
+    font: inherit;
+    color: var(--amber);
+    background: transparent;
+    border: 1px solid var(--amber-dim);
+    border-bottom: 0;
+    border-radius: 0.3em 0.3em 0 0;
+    cursor: pointer;
+    text-shadow: inherit;
+  }
+  .cs-tabs button[aria-selected='true'] {
+    color: #1a1206;
+    background: var(--amber);
+    text-shadow: none;
+  }
+  .cs-tabs button:focus-visible,
+  #computer-screen a:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 2px;
+  }
+  .cs-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.9em 1.1em 1.1em;
+    border-top: 1px solid var(--amber-dim);
+  }
+  .cs-body h2 {
+    margin: 0 0 0.5em;
+    font-size: 1.35em;
+  }
+  .cs-body h3 {
+    margin: 0 0 0.2em;
+    font-size: 1.05em;
+  }
+  .cs-body p {
+    margin: 0 0 0.7em;
+  }
+  .cs-year {
+    opacity: 0.6;
+    font-weight: 400;
+  }
+  .cs-projects,
+  .cs-links {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .cs-projects li {
+    padding: 0.6em 0;
+    border-bottom: 1px dashed var(--amber-dim);
+  }
+  .cs-projects li:last-child {
+    border-bottom: 0;
+  }
+  #computer-screen a {
+    color: var(--amber);
+  }
+  .cs-email {
+    font-size: 1.2em;
+  }
+  .cs-links li {
+    margin: 0.3em 0;
+  }
+  .cs-links li::before {
+    content: '> ';
+  }
+</style>

@@ -66,7 +66,12 @@ interface Moth extends Mover {
 
 type State = 'demo' | 'title' | 'play' | 'paused' | 'dead' | 'clear' | 'over';
 
-export function createArcade(opts: { tv: THREE.Object3D; glass: Glass; input: HTMLElement }) {
+export function createArcade(opts: {
+  tv: THREE.Object3D;
+  glass: Glass;
+  input: HTMLElement;
+  onGameOver?: (score: number) => void; // last life lost (leaderboard)
+}) {
   const { tv, glass: GLASS, input } = opts;
 
   // ── Canvas + texture + plane on the TV ─────────────────────────────────
@@ -374,6 +379,7 @@ export function createArcade(opts: { tv: THREE.Object3D; glass: Glass; input: HT
         } else {
           lives--;
           setState(lives > 0 ? 'dead' : 'over');
+          if (lives === 0) opts.onGameOver?.(score);
           break;
         }
       }
@@ -605,6 +611,7 @@ export function createArcade(opts: { tv: THREE.Object3D; glass: Glass; input: HT
 
   const onKey = (e: KeyboardEvent) => {
     if (!plane.visible || e.key === 'Escape') return; // Escape belongs to room.ts
+    if (e.target instanceof HTMLInputElement) return; // typing initials for the leaderboard
     const dir = KEYS[e.code];
     if (dir !== undefined || e.code === 'Space') e.preventDefault(); // don't scroll the page
     press(dir ?? null);

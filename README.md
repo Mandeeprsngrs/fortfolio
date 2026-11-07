@@ -40,8 +40,28 @@ Headless Chromium (SwiftShader, software GPU) reached `data-state="ready"` in 7�
 
 `#room` carries `data-state="loading" | "ready" | "error"`. Use it from CSS (e.g. a fade-in) or tests.
 
+## Editing the content
+
+- **About / Projects / Contact** (the desk computer): `src/components/Computer.astro`.
+  Text marked *Placeholder* is meant to be replaced; projects and links are small
+  lists at the top of the file.
+- **Title screen** (name, role, intro line): the `#intro` block in `src/components/Room.astro`.
+- **Song posters**: titles/artists in `POSTER_SONGS` at the top of `src/scripts/posters.ts`;
+  files in `public/media/`.
+- **Motion poster** (dresser TV + the two frames by the window): `MOTION_POSTER_SRC` in
+  `src/scripts/motionposters.ts`, file in `public/motion-posters/`. Use Mandeep's own
+  renders (not film/TV clips). Make it small and muted-friendly:
+
+  ```bash
+  ffmpeg -i render.mp4 -t 10 -vf "scale=960:-2,fps=30" -c:v libx264 -preset slow -crf 26 \
+         -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 96k motion.mp4
+  ```
+
+  (≈ 1–1.5 MB for 10 s; add `-an` instead of the audio options for a silent clip.)
+- **Leaderboards**: `src/scripts/leaderboard.ts` (set `LEADERBOARD_API` once the
+  Worker in `leaderboard-worker/` is deployed — see its README).
+
 ## Not done yet
 
-- Hover/click on objects (needs: a list of hero mesh names → project data)
 - 10 materials have no texture (white) — files missing from Mandeep's folder
 - Stray mesh `polySurface196` sits ~540 units outside the room; harmless here because framing ignores it
