@@ -14,6 +14,7 @@ import { createLeaderboards, type Leaderboards } from './leaderboard';
 import { createHints, type Hints } from './hints';
 import { createComputer, COMPUTER, type Computer } from './computer';
 import { createMotionPosters, flatPanels, type MotionPosters } from './motionposters';
+import { createYouTubeTV, YOUTUBE_TV, type YouTubeTV } from './youtubetv';
 
 const MODEL_URL = asset('models/mandeep.glb');
 const EXPOSURE = 0.8; // tone-mapping exposure; was 1 (three.js default)
@@ -78,7 +79,8 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
   setState('loading');
 
   // ── Renderer ────────────────────────────────────────────────────────────
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  // alpha: the YouTube TV shows through a transparent 'hole' in the canvas (youtubetv.ts).
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   // Cost is quadratic in pixel ratio: 2 = 4× the pixels, 3 = 9×. Cap at 2.
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   // Without tone mapping, bright areas clip to flat white.
@@ -100,6 +102,8 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
   // Direct light (sun through the window, sky fill, night lamp) comes from
   // daynight.ts, created once the model has loaded.
   let dayNight: DayNight | null = null;
+  // Declared up here because resize() (which runs immediately) uses it.
+  let youtubeTv: YouTubeTV | null = null;
 
   // ── Camera + controls ───────────────────────────────────────────────────
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
@@ -188,6 +192,7 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
     const { clientWidth: w, clientHeight: h } = canvas;
     if (w === 0 || h === 0) return;
     renderer.setSize(w, h, false); // false = don't write CSS; the stylesheet owns it
+    youtubeTv?.setSize(w, h);
     camera.aspect = w / h;
     setAzimuthLimits();
     if (view === 'dartboard' && !tween) {
@@ -255,6 +260,7 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
         onPlay: (song) => {
           nowPlaying?.show(song);
           motion?.mute(); // one sound at a time
+          youtubeTv?.mute();
         },
         onProgress: (f) => nowPlaying?.progress(f),
         onStop: () => nowPlaying?.hide(),
@@ -308,10 +314,17 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
       const tv2 = room.getObjectByName(DRESSER_TV) ?? null;
       const frames2 = room.getObjectByName(MOTION_FRAMES) as THREE.Mesh | undefined;
       const roomCentre = new THREE.Box3().setFromObject(shell).getCenter(new THREE.Vector3());
+      // The dresser TV plays the YouTube trailer (youtubetv.ts) when enabled;
+      // otherwise it shows the local motion-poster video like the frames.
+      const tvLayer = canvas.parentElement?.querySelector<HTMLElement>('#tv-layer');
+      if (tv2 && tvLayer && YOUTUBE_TV.enabled) {
+        youtubeTv = createYouTubeTV({ scene, tv: tv2, glass: measureTvGlass(tv2), layer: tvLayer });
+        youtubeTv.setSize(canvas.clientWidth, canvas.clientHeight);
+      }
       motion = createMotionPosters({
         scene,
-        tv: tv2,
-        tvGlass: tv2 ? measureTvGlass(tv2) : null,
+        tv: youtubeTv ? null : tv2,
+        tvGlass: tv2 && !youtubeTv ? measureTvGlass(tv2) : null,
         panels: frames2 ? flatPanels(frames2, roomCentre.clone().sub(new THREE.Box3().setFromObject(frames2).getCenter(new THREE.Vector3()))) : [],
       });
       if (entered) motion.start();
@@ -346,6 +359,8 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
       }
 
       setState('ready');
+      // Everything in the room is loaded: now fetch the YouTube player (lazy).
+      youtubeTv?.start();
     },
     (xhr) => {
       if (xhr.total) options.onProgress?.(xhr.loaded / xhr.total);
@@ -391,6 +406,7 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
     | { kind: 'console' }
     | { kind: 'computer' }
     | { kind: 'motion' }
+    | { kind: 'youtube' }
     | { kind: 'poster'; name: string }
     | null;
   function pickUnderPointer(e: PointerEvent): Pick {
@@ -402,6 +418,7 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
     if (raycaster.intersectObjects(screenObjs, true).length > 0) return { kind: 'console' };
     if (computer && raycaster.intersectObjects(computer.pickTargets, true).length > 0) return { kind: 'computer' };
     if (motion && raycaster.intersectObjects(motion.meshes, false).length > 0) return { kind: 'motion' };
+    if (youtubeTv && raycaster.intersectObjects(youtubeTv.pickTargets, true).length > 0) return { kind: 'youtube' };
     const poster = posters?.pick(raycaster);
     return poster ? { kind: 'poster', name: poster } : null;
   }
@@ -421,7 +438,13 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
     if (hit?.kind === 'dartboard') focusDartboard();
     else if (hit?.kind === 'console') focusConsole();
     else if (hit?.kind === 'computer') focusComputer();
-    else if (hit?.kind === 'motion' && motion?.toggleSound()) posters?.stopAll(); // one sound at a time
+    else if (hit?.kind === 'motion' && motion?.toggleSound()) {
+      posters?.stopAll(); // one sound at a time
+      youtubeTv?.mute();
+    } else if (hit?.kind === 'youtube' && youtubeTv?.toggleSound()) {
+      posters?.stopAll();
+      motion?.mute();
+    }
     else if (hit?.kind === 'poster') posters?.toggle(hit.name);
   };
   const onPointerMove = (e: PointerEvent) => {
@@ -601,6 +624,7 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
     }
     if (roomHeight > 0) camera.position.clamp(cameraBounds.min, cameraBounds.max);
     renderer.render(scene, camera);
+    youtubeTv?.render(camera); // move the player behind the canvas to match
   });
 
   // ── Teardown (Vite hot reload, or unmount) ──────────────────────────────
@@ -622,6 +646,7 @@ export function mountRoom(canvas: HTMLCanvasElement, dartsHud?: Hud, options: Ro
     leaderboards?.dispose();
     computer?.dispose();
     motion?.dispose();
+    youtubeTv?.dispose();
     envMap.dispose();
     pmrem.dispose();
     renderer.dispose();

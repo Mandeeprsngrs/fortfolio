@@ -5,6 +5,8 @@ import Computer from './Computer.astro';
 ---
 
 <div class="room">
+  <!-- Behind the canvas: the YouTube player for the dresser TV (youtubetv.ts). -->
+  <div id="tv-layer" aria-hidden="true"></div>
   <canvas id="room" tabindex="-1" aria-label="Mandeep's 3D room"></canvas>
   <button id="room-back" type="button">← Back to room</button>
   <div id="darts-hud" aria-live="polite">
@@ -115,6 +117,15 @@ import Computer from './Computer.astro';
 <style>
   .room {
     position: relative; /* the Back button is positioned against this */
+    isolation: isolate; /* own stacking context, so #tv-layer's z-index −1 stays inside it */
+  }
+  /* The YouTube TV layer sits under the (transparent-where-the-TV-is) canvas. */
+  #tv-layer {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
   }
 
   /* The canvas has two sizes: this CSS size (layout) and its drawing buffer
